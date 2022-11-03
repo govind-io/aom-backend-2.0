@@ -5,6 +5,7 @@ import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
+import { database } from "./database";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const __publicdir = path.join(__dirname, "../public");
