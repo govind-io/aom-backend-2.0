@@ -101,5 +101,25 @@ export const socketHandler = async () => {
         console.log({ error: e, location: "removing participants" })
       }
     })
+
+    //custom event handling from here
+    socket.on("send-message", async ({ content }, callback) => {
+      const data = {
+        content,
+        date: new Date().getTime(),
+        by: uid,
+      };
+
+      const localRoom = Room.findById(room._id)
+
+      localRoom.messages = localRoom.messages.concat(data)
+
+      await Room.findByIdAndUpdate(room._id, { messages: localRoom.messages })
+
+
+      io.to(room.name).emit("message", data);
+      callback();
+    });
+
   });
 };

@@ -44,6 +44,10 @@ app.get("/participants", RoomAuth, async (req, res) => {
   return res.status(200).send({ participants: req.room.participants })
 })
 
+app.get("/messages", RoomAuth, async (req, res) => {
+  return res.status(200).send({ messages: req.room.messages })
+})
+
 app.get("/healthcheck", (req, res) => {
   if (mongoose.connection.readyState === 1) {
     return res.status(200).send("Ok");
