@@ -5,10 +5,9 @@ export const database = mongoose.connect(
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    dbName: "meet",
+    dbName: "Meet",
   },
   (err) => {
-    console.log({ err });
     console.log("connected to db");
   }
 );

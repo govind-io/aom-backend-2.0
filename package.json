@@ -11,10 +11,13 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.18.2",
+    "jsonwebtoken": "^8.5.1",
     "mediasoup": "^3.10.12",
     "mongoose": "^6.6.5",
-    "socket.io": "^4.5.2"
+    "socket.io": "^4.5.2",
+    "validator": "^13.7.0"
   },
   "devDependencies": {
     "env-cmd": "^10.1.0",

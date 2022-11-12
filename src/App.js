@@ -5,7 +5,11 @@ import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
-import { database } from "./database";
+import cors from "cors"
+import { database } from "./database/index.js";
+import { AppAuth } from "./middleware/AppAuth.js";
+import jsonwebtoken from "jsonwebtoken";
+import { RoomAuth } from "./middleware/RoomAuth.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const __publicdir = path.join(__dirname, "../public");
@@ -20,15 +24,25 @@ app.use(express.json());
 app.use(express.static(__publicdir));
 
 //allow cross origin
-app.use(function (req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept,Authorization"
-  );
-  res.header("Access-control-Allow-Methods", "GET, PATCH, POST, PUT");
-  next();
-});
+app.use(cors());
+
+
+
+
+app.post("/generate-token", AppAuth, async (req, res) => {
+  const client = req.client;
+
+  const { room } = req.body
+
+  const token = await jsonwebtoken.sign({ roomname: room, id: client._id.toString() }, process.env.SECRET_KEY, { expiresIn: "24h" })
+
+  res.status(200).send({ token })
+})
+
+
+app.get("/participants", RoomAuth, async (req, res) => {
+  return res.status(200).send({ participants: req.room.participants })
+})
 
 app.get("/healthcheck", (req, res) => {
   if (mongoose.connection.readyState === 1) {
