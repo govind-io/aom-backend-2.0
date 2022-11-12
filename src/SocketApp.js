@@ -110,7 +110,7 @@ export const socketHandler = async () => {
         by: uid,
       };
 
-      const localRoom = Room.findById(room._id)
+      const localRoom = await Room.findById(room._id)
 
       localRoom.messages = localRoom.messages.concat(data)
 
