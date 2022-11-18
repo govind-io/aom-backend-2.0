@@ -10,13 +10,26 @@ import { database } from "./database/index.js";
 import { AppAuth } from "./middleware/AppAuth.js";
 import jsonwebtoken from "jsonwebtoken";
 import { RoomAuth } from "./middleware/RoomAuth.js";
+import { readFileSync } from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const __publicdir = path.join(__dirname, "../public");
 
+
+
+//certificates
+// const certicateOptions={
+//   key:readFileSync(`${__dirname}/SSL/key.pem` ,"utf-8"),
+//   cert:readFileSync(`${__dirname}/SSL/cert.pem` ,"utf-8")
+// }
+
+
+
 export const app = express();
 export const server = createServer(app);
 export const io = new Server(server, { cors: { origin: "*" } });
+
+
 
 //app configs
 
