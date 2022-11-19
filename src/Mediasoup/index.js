@@ -39,7 +39,6 @@ export let AllRouters = {}
 
 export const UpdateRouters = (newRouters) => {
     AllRouters = newRouters
-    console.log(newRouters.gandu)
 }
 
 

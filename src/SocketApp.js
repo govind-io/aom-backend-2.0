@@ -99,6 +99,7 @@ export const socketHandler = async () => {
 
     socket.to(room.name).emit("user-joined", { uid, role })
 
+
     socket.emit("connected", { id: socket.id, role });
 
     socket.on("disconnect", async () => {
@@ -107,7 +108,7 @@ export const socketHandler = async () => {
         const localRoom = await Room.findById(room._id)
         localRoom.participants = localRoom.participants.filter(item => item.name !== uid)
         await Room.findByIdAndUpdate(room._id, { participants: localRoom.participants })
-        console.log("deleting ", uid, "from ", AllRouters[room.name].peers)
+
 
         const newPeers = { ...AllRouters[room.name].peers }
 
@@ -174,6 +175,48 @@ export const socketHandler = async () => {
       } catch (e) {
         callback(null, e.message)
       }
+
+
+      socket.on("connect-producer", async ({ dtlsParameters }, callback) => {
+        callback()
+        await AllRouters[room.name].peers[uid].transport.connect({ dtlsParameters })
+      })
+
+      socket.on("produce-producer", async ({ rtpParameters, kind, appData }, callback) => {
+
+        let producer
+
+        try {
+          producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
+          socket.to(room.name).emit("user-published", { uid, producerId: producer.id })
+        } catch (e) {
+          return callback({ error: e })
+        }
+
+        const temp = AllRouters
+
+        temp[room.name].peers[uid].producers.push(producer)
+
+        UpdateRouters(temp)
+
+        //adding producer events
+        producer.on("transportclose", () => {
+          producer.close()
+          const temp = AllRouters
+          temp[room.name].peers[uid].producers = []
+          temp[room.name].peers[uid].consumers = []
+          temp[room.name].peers[uid].transport = ""
+          UpdateRouters(temp)
+        })
+
+        producer.observer.on("close", () => {
+          const temp = AllRouters
+          temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.id !== producer.id)
+          UpdateRouters(temp)
+        })
+
+        callback({ id: producer.id })
+      })
 
     })
 
