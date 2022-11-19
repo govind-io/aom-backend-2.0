@@ -59,7 +59,6 @@ export const socketHandler = async () => {
       socket.disconnect()
       console.log("disconnected", { error: e, location: "Initiating socket connection" })
     }
-
   });
 
   io.on("connection", async (socket) => {
@@ -95,7 +94,7 @@ export const socketHandler = async () => {
 
     socket.join(room.name)
 
-    UpdateRouters({ ...AllRouters, [room.name]: { ...AllRouters[room.name], peers: { ...AllRouters[room.name].peers, [uid]: { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "" } } } })
+    UpdateRouters({ ...AllRouters, [room.name]: { ...AllRouters[room.name], peers: { ...AllRouters[room.name].peers, [uid]: { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "", receiverTransport: [] } } } })
 
     socket.to(room.name).emit("user-joined", { uid, role })
 
@@ -152,6 +151,24 @@ export const socketHandler = async () => {
       callback({ routerRtpCapabilities })
     })
 
+    socket.on("device-connected", () => {
+      const allPeers = Object.keys(AllRouters[room.name].peers)
+      const ExistingProducingUsers = allPeers.filter((elem) => {
+        return AllRouters[room.name].peers[elem].role === "host" && AllRouters[room.name].peers[elem].producers.length > 0
+      })
+
+
+
+      ExistingProducingUsers.forEach((elem) => {
+        const ExistingPeer = AllRouters[room.name].peers[elem]
+
+        ExistingPeer.producers.forEach((item) => {
+          socket.emit("user-published", { uid: elem, producerId: item.id, kind: item.kind })
+        })
+      })
+
+    })
+
     //step for creating a send transport
     socket.on("create-producer-transport", async (callback) => {
       if (role !== "host") {
@@ -173,60 +190,159 @@ export const socketHandler = async () => {
         callback(params, null)
 
       } catch (e) {
-        callback(null, e.message)
+        return callback(null, e.message)
       }
 
+    })
 
-      socket.on("connect-producer", async ({ dtlsParameters }, callback) => {
-        callback()
+    socket.on("connect-producer", async ({ dtlsParameters }, callback) => {
+      callback()
+
+      try {
         await AllRouters[room.name].peers[uid].transport.connect({ dtlsParameters })
+      } catch (error) {
+        callback(error)
+      }
+
+    })
+
+    socket.on("produce-producer", async ({ rtpParameters, kind, appData }, callback) => {
+
+      let producer
+
+      try {
+        producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
+        socket.to(room.name).emit("user-published", { uid, producerId: producer.id, role, kind })
+      } catch (e) {
+        return callback({ error: e })
+      }
+
+      const temp = AllRouters
+
+      temp[room.name].peers[uid].producers.push(producer)
+
+      UpdateRouters(temp)
+
+      //adding producer events
+      producer.on("transportclose", () => {
+        producer.close()
+        const temp = AllRouters
+        temp[room.name].peers[uid].producers = []
+        temp[room.name].peers[uid].consumers = []
+        temp[room.name].peers[uid].transport = ""
+        UpdateRouters(temp)
       })
 
-      socket.on("produce-producer", async ({ rtpParameters, kind, appData }, callback) => {
+      producer.observer.on("close", () => {
+        const temp = AllRouters
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.id !== producer.id)
+        UpdateRouters(temp)
+      })
 
-        let producer
+      callback({ id: producer.id })
+    })
 
-        try {
-          producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
-          socket.to(room.name).emit("user-published", { uid, producerId: producer.id })
-        } catch (e) {
-          return callback({ error: e })
+
+    //receiver handling starts here
+    socket.on("create-reciever-transport", async (callback) => {
+      try {
+        const receiverTransport = await CreateWebRTCTransport(AllRouters[room.name].router)
+        const params = {
+          id: receiverTransport.id,
+          iceParameters: receiverTransport.iceParameters,
+          iceCandidates: receiverTransport.iceCandidates,
+          dtlsParameters: receiverTransport.dtlsParameters,
         }
+
+        UpdateRouters({ ...AllRouters, [room.name]: { ...AllRouters[room.name], peers: { ...AllRouters[room.name].peers, [uid]: { ...AllRouters[room.name].peers[uid], receiverTransport: [...AllRouters[room.name].peers[uid].receiverTransport, receiverTransport] } } } })
+
+
+        callback(params, null)
+
+      } catch (e) {
+        return callback(null, e.message)
+      }
+    })
+
+    socket.on("connect-consumer", async ({ dtlsParameters, serverConsumerTransportId }, callback) => {
+      const consumerTransportToConnect = AllRouters[room.name].peers[uid].receiverTransport.find((item) => item.id === serverConsumerTransportId)
+
+      if (!consumerTransportToConnect) {
+        return callback(error)
+      }
+
+      try {
+        const consumer = await consumerTransportToConnect.connect({ dtlsParameters })
+        callback()
 
         const temp = AllRouters
 
-        temp[room.name].peers[uid].producers.push(producer)
+        temp[room.name].peers.consumers = temp[room.name].peers.consumers.push(consumer)
 
-        UpdateRouters(temp)
+        UpdateRouters(AllRouters)
 
-        //adding producer events
-        producer.on("transportclose", () => {
-          producer.close()
+      } catch (e) {
+        return callback(e)
+      }
+    })
+
+    socket.on("consume-consumer", async ({ rtpCapabilities, producerId, serverConsumerTransportId }, callback) => {
+
+      const ConsumerTransportToConsume = AllRouters[room.name].peers[uid].receiverTransport.find((item) => item.id === serverConsumerTransportId)
+
+      if (AllRouters[room.name].router.canConsume({
+        producerId,
+        rtpCapabilities
+      }) && ConsumerTransportToConsume) {
+        const consumer = await ConsumerTransportToConsume.consume({
+          producerId,
+          rtpCapabilities,
+          paused: true,
+        })
+
+        consumer.on('transportclose', () => {
+          console.log('transport close from consumer')
+          consumer.close()
           const temp = AllRouters
-          temp[room.name].peers[uid].producers = []
-          temp[room.name].peers[uid].consumers = []
-          temp[room.name].peers[uid].transport = ""
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
           UpdateRouters(temp)
         })
 
-        producer.observer.on("close", () => {
+        consumer.on('producerclose', () => {
+          console.log('producer of consumer closed')
+          socket.emit('producer-closed', { producerId })
+
+          ConsumerTransportToConsume.close([])
+          transports = transports.filter(transportData => transportData.transport.id !== consumerTransport.id)
+          consumer.close()
           const temp = AllRouters
-          temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.id !== producer.id)
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
           UpdateRouters(temp)
         })
 
-        callback({ id: producer.id })
-      })
+        consumer.observer.on("close", () => {
+          consumer.close()
+          const temp = AllRouters
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
+          UpdateRouters(temp)
+        })
 
+
+        const data = {
+          id: consumer.id,
+          producerId: producerId,
+          kind: consumer.kind,
+          rtpParameters: consumer.rtpParameters,
+          serverConsumerId: consumer.id,
+        }
+
+        // send the parameters to the client
+        callback(data)
+
+      } else {
+        callback(null, "can not consume this producer")
+      }
     })
-
-
-
-    socket.on("create-receiver-transport", () => {
-      console.log("Creating receiving transport here")
-    })
-
-
 
   });
 };
