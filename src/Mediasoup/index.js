@@ -27,7 +27,7 @@ export const mediaCodecs = [{
     channels: 2
 }, {
     kind: "video",
-    mimeType: "video/VP8",
+    mimeType: "video/H264",
     clockRate: 90000,
     parameters: {
         "x-google-start-bitrate": 1000
@@ -50,7 +50,7 @@ export const CreateWebRTCTransport = (router) => {
                 listenIps: [
                     {
                         ip: '0.0.0.0',
-                        announcedIp: '192.168.1.3', // replace with relevant IP address
+                        announcedIp: '127.0.0.1', // replace with relevant IP address
                     }
                 ],
                 enableUdp: true,

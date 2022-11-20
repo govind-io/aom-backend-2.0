@@ -108,6 +108,21 @@ export const socketHandler = async () => {
         localRoom.participants = localRoom.participants.filter(item => item.name !== uid)
         await Room.findByIdAndUpdate(room._id, { participants: localRoom.participants })
 
+        //closing all transports
+        const thisPeer = AllRouters[room.name].peers[uid]
+
+        try {
+          thisPeer.transport.close()
+          thisPeer.receiverTransport.forEach((elem) => elem.close())
+          thisPeer.producers.forEach((elem) => elem.close())
+          thisPeer.consumers.forEach((elem) => elem.close())
+        }
+        catch (e) {
+          console.log("error occured", e.message)
+        }
+
+
+        AllRouters[room.name].peers[uid].transport
 
         const newPeers = { ...AllRouters[room.name].peers }
 
@@ -227,8 +242,7 @@ export const socketHandler = async () => {
       producer.on("transportclose", () => {
         producer.close()
         const temp = AllRouters
-        temp[room.name].peers[uid].producers = []
-        temp[room.name].peers[uid].consumers = []
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].prodcuers.filter((item) => item.id !== producer.id)
         temp[room.name].peers[uid].transport = ""
         UpdateRouters(temp)
       })
@@ -294,14 +308,26 @@ export const socketHandler = async () => {
         producerId,
         rtpCapabilities
       }) && ConsumerTransportToConsume) {
-        const consumer = await ConsumerTransportToConsume.consume({
-          producerId,
-          rtpCapabilities,
-          paused: true,
-        })
+
+        let consumer
+
+        try {
+          consumer = await ConsumerTransportToConsume.consume({
+            producerId,
+            rtpCapabilities,
+            paused: true,
+          })
+          const temp = AllRouters
+
+          temp[room.name].peers[uid].consumers.push(consumer)
+
+          UpdateRouters(temp)
+        } catch (e) {
+          console.log("error while consuming the transport", e.message)
+          return callback(null, "can not consume this producer")
+        }
 
         consumer.on('transportclose', () => {
-          console.log('transport close from consumer')
           consumer.close()
           const temp = AllRouters
           temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
@@ -309,14 +335,14 @@ export const socketHandler = async () => {
         })
 
         consumer.on('producerclose', () => {
-          console.log('producer of consumer closed')
           socket.emit('producer-closed', { producerId })
 
-          ConsumerTransportToConsume.close([])
-          transports = transports.filter(transportData => transportData.transport.id !== consumerTransport.id)
+          //ConsumerTransportToConsume.close([])
+
           consumer.close()
           const temp = AllRouters
           temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
+          temp.AllRouters[room.name].peers[uid].receiverTransport = temp.AllRouters[room.name].peers[uid].receiverTransport.filter((elem) => elem.id !== ConsumerTransportToConsume.id)
           UpdateRouters(temp)
         })
 
@@ -341,6 +367,14 @@ export const socketHandler = async () => {
 
       } else {
         callback(null, "can not consume this producer")
+      }
+    })
+
+    socket.on("resume-consumer", async ({ consumer_id }) => {
+      try {
+        await AllRouters[room.name].peers[uid].consumers.find((item) => item.id === consumer_id).resume()
+      } catch (e) {
+        console.log("error while resuming track ", e.message)
       }
     })
 
