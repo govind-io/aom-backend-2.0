@@ -335,8 +335,8 @@ export const socketHandler = async () => {
         })
 
         consumer.on('producerclose', () => {
+          socket.emit("user-unpublished", { producerId })
           socket.emit('producer-closed', { producerId })
-
           //ConsumerTransportToConsume.close([])
 
           consumer.close()

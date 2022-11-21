@@ -1,9 +1,7 @@
 import { createWorker } from "mediasoup";
 
 export const CreateWorker = async () => {
-    const worker = await createWorker({
-        rtcMaxPort: 2020, rtcMinPort: 2000
-    })
+    const worker = await createWorker()
 
     console.log(`Worker pid is ${worker.pid}`)
 
