@@ -62,19 +62,22 @@ export const socketHandler = async () => {
   });
 
   io.on("connection", async (socket) => {
-    const { uid, role, room } = socket.handshake.query
+    const { uid: tempUid, role, room } = socket.handshake.query
+    let uid
 
-    let Existing = room.participants.filter((item) => item.name.split("-")[0] === uid)
+
+    let Existing = room.participants.filter((item) => item.name.split("-")[0] === tempUid)
     Existing = Existing[Existing.length - 1]
 
     if (Existing) {
-      const name = uid.split("-")[0]
+      const name = tempUid
       const sequence = Existing.name.split("-")[1] || "0"
       const newUid = `${name}-${parseInt(sequence) + 1}`
-
-      room.participants = room.participants.concat({ role, name: newUid, socketId: socket.id })
+      uid = newUid
+      room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
     }
     else {
+      uid = tempUid
       room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
     }
 
@@ -169,10 +172,17 @@ export const socketHandler = async () => {
     socket.on("device-connected", () => {
       const allPeers = Object.keys(AllRouters[room.name].peers)
       const ExistingProducingUsers = allPeers.filter((elem) => {
-        return AllRouters[room.name].peers[elem].role === "host" && AllRouters[room.name].peers[elem].producers.length > 0
+        return AllRouters[room.name].peers[elem].role === "host" && AllRouters[room.name].peers[elem].producers.length > 0 && elem !== uid
       })
 
 
+      allPeers.forEach((elem) => {
+        if (AllRouters[room.name].peers[elem].device) {
+          socket.emit("rtc-user-joined", { uid: elem, role: AllRouters[room.name].peers[elem].role })
+        }
+      })
+
+      socket.to(room.name).emit("rtc-user-joined", { uid, role })
 
       ExistingProducingUsers.forEach((elem) => {
         const ExistingPeer = AllRouters[room.name].peers[elem]
@@ -181,6 +191,10 @@ export const socketHandler = async () => {
           socket.emit("user-published", { uid: elem, producerId: item.id, kind: item.kind })
         })
       })
+
+      const temp = AllRouters
+
+      temp[room.name].peers[uid].device = true
 
     })
 
@@ -211,6 +225,9 @@ export const socketHandler = async () => {
     })
 
     socket.on("connect-producer", async ({ dtlsParameters }, callback) => {
+      if (role !== "host") {
+        return callback(new Error("host can not produce tracks"))
+      }
       callback()
 
       try {
@@ -222,7 +239,9 @@ export const socketHandler = async () => {
     })
 
     socket.on("produce-producer", async ({ rtpParameters, kind, appData }, callback) => {
-
+      if (role !== "host") {
+        return callback(new Error("host can not produce tracks"))
+      }
       let producer
 
       try {
@@ -256,6 +275,17 @@ export const socketHandler = async () => {
       callback({ id: producer.id })
     })
 
+    socket.on("closed-producer", ({ producerId }) => {
+      const temp = AllRouters
+      temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((item) => {
+        if (item.id === producerId) {
+          item.close()
+        }
+        return item.id !== producerId
+      })
+
+      UpdateRouters(AllRouters)
+    })
 
     //receiver handling starts here
     socket.on("create-reciever-transport", async (callback) => {
@@ -376,6 +406,18 @@ export const socketHandler = async () => {
       } catch (e) {
         console.log("error while resuming track ", e.message)
       }
+    })
+
+    socket.on("consumer-closed", ({ consumerId }) => {
+      const temp = AllRouters
+      temp[room.name].peers[uid].consumers = temp[room.name].peers[uid].consumers.filter((item) => {
+
+        if (consumerId === item.id) {
+          item.close()
+        }
+
+        return item.id !== consumerId
+      })
     })
 
   });
