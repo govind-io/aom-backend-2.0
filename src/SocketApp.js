@@ -117,7 +117,7 @@ export const socketHandler = async () => {
         try {
           thisPeer.transport.close()
           thisPeer.receiverTransport.forEach((elem) => elem.close())
-          thisPeer.producers.forEach((elem) => elem.close())
+          thisPeer.producers.forEach((elem) => elem.producer.close())
           thisPeer.consumers.forEach((elem) => elem.close())
         }
         catch (e) {
@@ -188,7 +188,7 @@ export const socketHandler = async () => {
         const ExistingPeer = AllRouters[room.name].peers[elem]
 
         ExistingPeer.producers.forEach((item) => {
-          socket.emit("user-published", { uid: elem, producerId: item.id, kind: item.kind })
+          socket.emit("user-published", { uid: elem, producerId: item.producer.id, kind: item.producer.kind, type: item.type })
         })
       })
 
@@ -238,7 +238,7 @@ export const socketHandler = async () => {
 
     })
 
-    socket.on("produce-producer", async ({ rtpParameters, kind, appData }, callback) => {
+    socket.on("produce-producer", async ({ rtpParameters, kind, type }, callback) => {
       if (role !== "host") {
         return callback(new Error("host can not produce tracks"))
       }
@@ -246,14 +246,15 @@ export const socketHandler = async () => {
 
       try {
         producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
-        socket.to(room.name).emit("user-published", { uid, producerId: producer.id, role, kind })
+        socket.to(room.name).emit("user-published", { uid, producerId: producer.id, role, kind, type })
       } catch (e) {
+        console.log("error occured", e)
         return callback({ error: e })
       }
 
       const temp = AllRouters
 
-      temp[room.name].peers[uid].producers.push(producer)
+      temp[room.name].peers[uid].producers.push({ producer, type })
 
       UpdateRouters(temp)
 
@@ -261,14 +262,14 @@ export const socketHandler = async () => {
       producer.on("transportclose", () => {
         producer.close()
         const temp = AllRouters
-        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].prodcuers.filter((item) => item.id !== producer.id)
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].prodcuers.filter((item) => item.producer.id !== producer.id)
         temp[room.name].peers[uid].transport = ""
         UpdateRouters(temp)
       })
 
       producer.observer.on("close", () => {
         const temp = AllRouters
-        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.id !== producer.id)
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.producer.id !== producer.id)
         UpdateRouters(temp)
       })
 
@@ -278,10 +279,11 @@ export const socketHandler = async () => {
     socket.on("closed-producer", ({ producerId }) => {
       const temp = AllRouters
       temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((item) => {
-        if (item.id === producerId) {
-          item.close()
+        if (item.producer.id === producerId) {
+          item.producer.close()
         }
-        return item.id !== producerId
+
+        return item.producer.id !== producerId
       })
 
       UpdateRouters(AllRouters)
