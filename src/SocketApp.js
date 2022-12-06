@@ -2,7 +2,7 @@ import { io } from "./App.js";
 import { Client } from "./database/Models/clients.js";
 import jsonwebtoken from "jsonwebtoken"
 import { Room } from "./database/Models/rooms.js";
-import { AllRouters, CreateWebRTCTransport, mediaCodecs, UpdateRouters, Worker } from "./Mediasoup/index.js";
+import { ActiveWorkerIDX, AllRouters, CreateWebRTCTransport, mediaCodecs, UpdateActiveWorkerIDX, UpdateRouters, Worker } from "./Mediasoup/index.js";
 
 export const socketHandler = async () => {
 
@@ -48,7 +48,14 @@ export const socketHandler = async () => {
       let routerExists = AllRouters[roomname]
 
       if (!routerExists) {
-        routerExists = await Worker.createRouter({ mediaCodecs })
+        routerExists = await Worker[ActiveWorkerIDX].createRouter({ mediaCodecs })
+
+        if(ActiveWorkerIDX+1===Worker.length){
+          UpdateActiveWorkerIDX(0)
+        }else{
+          UpdateActiveWorkerIDX(ActiveWorkerIDX+1)
+        }
+
         const rtpCapabilities = await routerExists.rtpCapabilities
         UpdateRouters({ ...AllRouters, [roomname]: { router: routerExists, rtpCapabilities, peers: {} } })
       }
