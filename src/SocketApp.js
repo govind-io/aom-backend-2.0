@@ -289,6 +289,27 @@ export const socketHandler = async () => {
       UpdateRouters(AllRouters)
     })
 
+    socket.on("producer-paused", ({ producerId }) => {
+      const pausedProducer = AllRouters[room.name].peers[uid].producers.find((item) => item.producer.id === producerId)
+      try {
+        pausedProducer.pause()
+        console.log("producer paused")
+      } catch (e) {
+        console.log("error occureed", e)
+      }
+    })
+
+    socket.on("resume-producer", ({ producerId }) => {
+      const resumedProducer = AllRouters[room.name].peers[uid].producers.find((item) => item.producer.id === producerId)
+      try {
+        resumedProducer.resume()
+        console.log("producer resumed")
+      } catch (e) {
+        console.log("error occureed", e)
+      }
+    })
+
+
     //receiver handling starts here
     socket.on("create-reciever-transport", async (callback) => {
       try {
@@ -384,7 +405,6 @@ export const socketHandler = async () => {
           temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
           UpdateRouters(temp)
         })
-
 
         const data = {
           id: consumer.id,
