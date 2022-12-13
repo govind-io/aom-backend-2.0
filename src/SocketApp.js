@@ -69,22 +69,31 @@ export const socketHandler = async () => {
   });
 
   io.on("connection", async (socket) => {
-    const { uid: tempUid, role, room } = socket.handshake.query
-    let uid
+    const { uid, role, room } = socket.handshake.query
 
 
-    let Existing = room.participants.filter((item) => item.name.split("-")[0] === tempUid)
-    Existing = Existing[Existing.length - 1]
+    let Existing = room.participants.find((item) => item.name === uid && item.role === role)
+
 
     if (Existing) {
-      const name = tempUid
-      const sequence = Existing.name.split("-")[1] || "0"
-      const newUid = `${name}-${parseInt(sequence) + 1}`
-      uid = newUid
-      room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
+      try {
+        const existingPeer = AllRouters[room.name].peers[uid]
+        await existingPeer.transport.close()
+        existingPeer.receiverTransport.forEach(async (item) => {
+          await item.close()
+        })
+        io.sockets.sockets.forEach((socket) => {
+          // If given socket id is exist in list of all sockets, kill it
+          if (socket.id === existingPeer.id) {
+            socket.disconnect(true);
+          }
+
+        });
+      } catch (e) {
+        console.log("error occured while kicking out existing user", { e })
+      }
     }
     else {
-      uid = tempUid
       room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
     }
 
@@ -103,49 +112,50 @@ export const socketHandler = async () => {
     if (!updatedParticipants) return
 
     socket.join(room.name)
+    const temp = AllRouters
 
-    UpdateRouters({ ...AllRouters, [room.name]: { ...AllRouters[room.name], peers: { ...AllRouters[room.name].peers, [uid]: { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "", receiverTransport: [] } } } })
+    temp[room.name].peers[uid] = { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "", receiverTransport: [] }
+
+    UpdateRouters(temp)
 
     socket.to(room.name).emit("user-joined", { uid, role })
 
 
     socket.emit("connected", { id: socket.id, role });
 
-    socket.on("disconnect", async () => {
+    socket.on("disconnect", async (reason) => {
+
       socket.to(room.name).emit("user-left", { uid, role })
+
+      if (reason === "server namespace disconnect") {
+        return
+      }
+
       try {
         const localRoom = await Room.findById(room._id)
         localRoom.participants = localRoom.participants.filter(item => item.name !== uid)
         await Room.findByIdAndUpdate(room._id, { participants: localRoom.participants })
 
-        //closing all transports
-        const thisPeer = AllRouters[room.name].peers[uid]
-
         try {
+          const thisPeer = AllRouters[room.name].peers[uid]
           thisPeer.transport.close()
           thisPeer.receiverTransport.forEach((elem) => elem.close())
-          thisPeer.producers.forEach((elem) => elem.producer.close())
-          thisPeer.consumers.forEach((elem) => elem.consumer.close())
         }
         catch (e) {
           console.log("error occured", e.message)
         }
-
-
-        AllRouters[room.name].peers[uid].transport
-
-        const newPeers = { ...AllRouters[room.name].peers }
-
-        delete newPeers[uid]
-
-        UpdateRouters({
-          ...AllRouters, [room.name]: {
-            ...AllRouters[room.name], peers: newPeers
-          }
-        })
       } catch (e) {
         console.log({ error: e, location: "removing participants" })
       }
+
+      const newPeers = { ...AllRouters[room.name].peers }
+      delete newPeers[uid]
+
+      UpdateRouters({
+        ...AllRouters, [room.name]: {
+          ...AllRouters[room.name], peers: newPeers
+        }
+      })
     })
 
     //custom event handling from here

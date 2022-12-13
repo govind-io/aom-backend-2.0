@@ -1,7 +1,15 @@
 import { createWorker } from "mediasoup";
 import * as os from "os"
 export const CreateWorker = async () => {
-	const worker = await createWorker()
+	let worker
+
+	if (process.env.PROD === "true") {
+		worker = await createWorker({ rtcMaxPort: process.env.RTCMAXPORT, rtcMinPort: process.env.RTCMINPORT })
+	}
+
+	else {
+		worker = await createWorker()
+	}
 
 	console.log(`Worker pid is ${worker.pid}`)
 
@@ -23,9 +31,15 @@ export const UpdateActiveWorkerIDX = (val) => {
 	ActiveWorkerIDX = val
 }
 
-Object.keys(os.cpus()).forEach(async () => {
+
+if (process.env.PROD === "true") {
+	Object.keys(os.cpus()).forEach(async () => {
+		Worker.push(await CreateWorker())
+	})
+} else {
 	Worker.push(await CreateWorker())
-})
+}
+
 
 
 
@@ -97,7 +111,7 @@ export const CreateWebRTCTransport = (router) => {
 				listenIps: [
 					{
 						ip: '0.0.0.0',
-						announcedIp: '127.0.0.1', // replace with relevant IP address
+						announcedIp: process.env.ANNOUNCEDIP
 					}
 				],
 				enableUdp: true,
