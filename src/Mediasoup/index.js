@@ -140,3 +140,23 @@ export const CreateWebRTCTransport = (router) => {
 		}
 	})
 }
+
+
+export const defaultAudioVolumeObserverConfig = {
+	maxEntries: 50,
+	threshold: -40,
+	interval: 800
+}
+
+
+export const convertDBsTo0To100 = function (dBs) {
+	// Convert from dBs to linear scale
+
+	var linear = Math.round(Math.pow(10, dBs / 85) * 10);
+
+	if (linear === 1) {
+		return 0
+	}
+
+	return linear;
+}

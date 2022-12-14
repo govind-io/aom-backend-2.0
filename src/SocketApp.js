@@ -2,7 +2,7 @@ import { io } from "./App.js";
 import { Client } from "./database/Models/clients.js";
 import jsonwebtoken from "jsonwebtoken"
 import { Room } from "./database/Models/rooms.js";
-import { ActiveWorkerIDX, AllRouters, CreateWebRTCTransport, mediaCodecs, UpdateActiveWorkerIDX, UpdateRouters, Worker } from "./Mediasoup/index.js";
+import { ActiveWorkerIDX, AllRouters, convertDBsTo0To100, CreateWebRTCTransport, defaultAudioVolumeObserverConfig, mediaCodecs, UpdateActiveWorkerIDX, UpdateRouters, Worker } from "./Mediasoup/index.js";
 
 export const socketHandler = async () => {
 
@@ -156,6 +156,16 @@ export const socketHandler = async () => {
           ...AllRouters[room.name], peers: newPeers
         }
       })
+
+      if (Object.keys(newPeers).length === 0) {
+
+        await AllRouters[room.name].router.close()
+        const temp = AllRouters
+
+        delete temp[room.name]
+
+        UpdateRouters(temp)
+      }
     })
 
     //custom event handling from here
@@ -264,6 +274,17 @@ export const socketHandler = async () => {
       try {
         producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
         socket.to(room.name).emit("user-published", { uid, producerId: producer.id, role, kind, type })
+
+        const audioLevelObserver = AllRouters[room.name].audioLevelObserver
+
+        if (audioLevelObserver && producer.kind === "audio") {
+          try {
+            await audioLevelObserver.addProducer({ producerId: producer.id })
+          } catch (e) {
+            console.log("catch error ", e)
+          }
+        }
+
       } catch (e) {
         console.log("error occured", e)
         return callback({ error: e })
@@ -284,9 +305,10 @@ export const socketHandler = async () => {
         UpdateRouters(temp)
       })
 
-      producer.observer.on("close", () => {
+      producer.observer.on("close", async () => {
         const temp = AllRouters
-        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.producer.id !== producer.id)
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid]?.producers.filter((elem) => elem.producer.id !== producer.id)
+
         UpdateRouters(temp)
       })
 
@@ -426,7 +448,7 @@ export const socketHandler = async () => {
         consumer.observer.on("close", () => {
           consumer.close()
           const temp = AllRouters
-          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.consumer.id === consumer.id)
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid]?.consumers.filter((item) => item.consumer.id === consumer.id)
           UpdateRouters(temp)
         })
 
@@ -460,6 +482,71 @@ export const socketHandler = async () => {
         console.log("error while resuming track ", e.message)
       }
     })
+
+
+    //for volume observer logic starts from here
+    socket.on("enable-volume-observer", async (callback) => {
+      if (AllRouters[room.name].audioLevelObserver) {
+        return callback()
+      }
+
+      const router = AllRouters[room.name].router
+
+
+      try {
+        const audioLevelObserver = await router.createAudioLevelObserver(defaultAudioVolumeObserverConfig);
+
+        const temp = AllRouters
+
+        const existingPeers = Object.keys(AllRouters[room.name].peers)
+
+        existingPeers.forEach((elem) => {
+          AllRouters[room.name].peers[elem].producers.forEach(async (item) => {
+            if (producer.kind === "audio") {
+              try {
+                await audioLevelObserver.addProducer({ producerId: item.producer.id })
+              }
+              catch (e) {
+                console.log("error occured while adding producer for volume observer", e)
+              }
+            }
+          })
+        })
+
+        temp[room.name].audioLevelObserver = audioLevelObserver
+
+        UpdateRouters(temp)
+
+        audioLevelObserver.on("volumes", (volumes) => {
+          const volumesObj = {}
+
+          volumes.forEach((item) => {
+            const allPeers = Object.keys(AllRouters[room.name].peers)
+
+            allPeers.forEach((thisUserId) => {
+              const producer = AllRouters[room.name].peers[thisUserId].producers.find((elem) => elem.producer.id === item.producer.id)
+
+              if (producer) {
+                volumesObj[thisUserId] = convertDBsTo0To100(item.volume);
+              }
+
+            })
+
+            io.in(room.name).emit("volumes", volumesObj)
+          })
+        })
+
+        audioLevelObserver.on("silence", () => {
+          io.in(room.name).emit("volumes", {})
+        })
+
+        callback()
+      }
+      catch (e) {
+        callback(e.message)
+      }
+    })
+
 
     socket.on("consumer-closed", ({ consumerId }) => {
       const temp = AllRouters
