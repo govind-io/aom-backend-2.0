@@ -2,7 +2,7 @@ import { io } from "./App.js";
 import { Client } from "./database/Models/clients.js";
 import jsonwebtoken from "jsonwebtoken"
 import { Room } from "./database/Models/rooms.js";
-import { ActiveWorkerIDX, AllRouters, CreateWebRTCTransport, mediaCodecs, UpdateActiveWorkerIDX, UpdateRouters, Worker } from "./Mediasoup/index.js";
+import { ActiveWorkerIDX, AllRouters, convertDBsTo0To100, CreateWebRTCTransport, defaultAudioVolumeObserverConfig, mediaCodecs, UpdateActiveWorkerIDX, UpdateRouters, Worker } from "./Mediasoup/index.js";
 
 export const socketHandler = async () => {
 
@@ -50,10 +50,10 @@ export const socketHandler = async () => {
       if (!routerExists) {
         routerExists = await Worker[ActiveWorkerIDX].createRouter({ mediaCodecs })
 
-        if(ActiveWorkerIDX+1===Worker.length){
+        if (ActiveWorkerIDX + 1 === Worker.length) {
           UpdateActiveWorkerIDX(0)
-        }else{
-          UpdateActiveWorkerIDX(ActiveWorkerIDX+1)
+        } else {
+          UpdateActiveWorkerIDX(ActiveWorkerIDX + 1)
         }
 
         const rtpCapabilities = await routerExists.rtpCapabilities
@@ -69,22 +69,31 @@ export const socketHandler = async () => {
   });
 
   io.on("connection", async (socket) => {
-    const { uid: tempUid, role, room } = socket.handshake.query
-    let uid
+    const { uid, role, room } = socket.handshake.query
 
 
-    let Existing = room.participants.filter((item) => item.name.split("-")[0] === tempUid)
-    Existing = Existing[Existing.length - 1]
+    let Existing = room.participants.find((item) => item.name === uid && item.role === role)
+
 
     if (Existing) {
-      const name = tempUid
-      const sequence = Existing.name.split("-")[1] || "0"
-      const newUid = `${name}-${parseInt(sequence) + 1}`
-      uid = newUid
-      room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
+      try {
+        const existingPeer = AllRouters[room.name].peers[uid]
+        await existingPeer.transport.close()
+        existingPeer.receiverTransport.forEach(async (item) => {
+          await item.close()
+        })
+        io.sockets.sockets.forEach((socket) => {
+          // If given socket id is exist in list of all sockets, kill it
+          if (socket.id === existingPeer.id) {
+            socket.disconnect(true);
+          }
+
+        });
+      } catch (e) {
+        console.log("error occured while kicking out existing user", { e })
+      }
     }
     else {
-      uid = tempUid
       room.participants = room.participants.concat({ role, name: uid, socketId: socket.id })
     }
 
@@ -103,48 +112,59 @@ export const socketHandler = async () => {
     if (!updatedParticipants) return
 
     socket.join(room.name)
+    const temp = AllRouters
 
-    UpdateRouters({ ...AllRouters, [room.name]: { ...AllRouters[room.name], peers: { ...AllRouters[room.name].peers, [uid]: { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "", receiverTransport: [] } } } })
+    temp[room.name].peers[uid] = { id: socket.id, roomname: room.name, producers: [], consumers: [], name: uid, role, transport: "", receiverTransport: [] }
+
+    UpdateRouters(temp)
 
     socket.to(room.name).emit("user-joined", { uid, role })
 
 
     socket.emit("connected", { id: socket.id, role });
 
-    socket.on("disconnect", async () => {
+    socket.on("disconnect", async (reason) => {
+
       socket.to(room.name).emit("user-left", { uid, role })
+
+      if (reason === "server namespace disconnect") {
+        return
+      }
+
       try {
         const localRoom = await Room.findById(room._id)
         localRoom.participants = localRoom.participants.filter(item => item.name !== uid)
         await Room.findByIdAndUpdate(room._id, { participants: localRoom.participants })
 
-        //closing all transports
-        const thisPeer = AllRouters[room.name].peers[uid]
-
         try {
+          const thisPeer = AllRouters[room.name].peers[uid]
           thisPeer.transport.close()
           thisPeer.receiverTransport.forEach((elem) => elem.close())
-          thisPeer.producers.forEach((elem) => elem.producer.close())
-          thisPeer.consumers.forEach((elem) => elem.close())
         }
         catch (e) {
           console.log("error occured", e.message)
         }
-
-
-        AllRouters[room.name].peers[uid].transport
-
-        const newPeers = { ...AllRouters[room.name].peers }
-
-        delete newPeers[uid]
-
-        UpdateRouters({
-          ...AllRouters, [room.name]: {
-            ...AllRouters[room.name], peers: newPeers
-          }
-        })
       } catch (e) {
         console.log({ error: e, location: "removing participants" })
+      }
+
+      const newPeers = { ...AllRouters[room.name].peers }
+      delete newPeers[uid]
+
+      UpdateRouters({
+        ...AllRouters, [room.name]: {
+          ...AllRouters[room.name], peers: newPeers
+        }
+      })
+
+      if (Object.keys(newPeers).length === 0) {
+
+        await AllRouters[room.name].router.close()
+        const temp = AllRouters
+
+        delete temp[room.name]
+
+        UpdateRouters(temp)
       }
     })
 
@@ -254,6 +274,17 @@ export const socketHandler = async () => {
       try {
         producer = await AllRouters[room.name].peers[uid].transport.produce({ rtpParameters, kind })
         socket.to(room.name).emit("user-published", { uid, producerId: producer.id, role, kind, type })
+
+        const audioLevelObserver = AllRouters[room.name].audioLevelObserver
+
+        if (audioLevelObserver && producer.kind === "audio") {
+          try {
+            await audioLevelObserver.addProducer({ producerId: producer.id })
+          } catch (e) {
+            console.log("catch error ", e)
+          }
+        }
+
       } catch (e) {
         console.log("error occured", e)
         return callback({ error: e })
@@ -274,9 +305,10 @@ export const socketHandler = async () => {
         UpdateRouters(temp)
       })
 
-      producer.observer.on("close", () => {
+      producer.observer.on("close", async () => {
         const temp = AllRouters
-        temp[room.name].peers[uid].producers = temp[room.name].peers[uid].producers.filter((elem) => elem.producer.id !== producer.id)
+        temp[room.name].peers[uid].producers = temp[room.name].peers[uid]?.producers.filter((elem) => elem.producer.id !== producer.id)
+
         UpdateRouters(temp)
       })
 
@@ -295,6 +327,25 @@ export const socketHandler = async () => {
 
       UpdateRouters(AllRouters)
     })
+
+    socket.on("producer-paused", async ({ producerId }) => {
+      const pausedProducer = AllRouters[room.name].peers[uid].producers.find((item) => item.producer.id === producerId)
+      try {
+        await pausedProducer.producer.pause()
+      } catch (e) {
+        console.log("error occureed", e)
+      }
+    })
+
+    socket.on("producer-resume", async ({ producerId }) => {
+      const resumedProducer = AllRouters[room.name].peers[uid].producers.find((item) => item.producer.id === producerId)
+      try {
+        await resumedProducer.producer.resume()
+      } catch (e) {
+        console.log("error occureed", e)
+      }
+    })
+
 
     //receiver handling starts here
     socket.on("create-reciever-transport", async (callback) => {
@@ -339,7 +390,7 @@ export const socketHandler = async () => {
       }
     })
 
-    socket.on("consume-consumer", async ({ rtpCapabilities, producerId, serverConsumerTransportId }, callback) => {
+    socket.on("consume-consumer", async ({ rtpCapabilities, producerId, serverConsumerTransportId, producerUid }, callback) => {
 
       const ConsumerTransportToConsume = AllRouters[room.name].peers[uid].receiverTransport.find((item) => item.id === serverConsumerTransportId)
 
@@ -358,7 +409,7 @@ export const socketHandler = async () => {
           })
           const temp = AllRouters
 
-          temp[room.name].peers[uid].consumers.push(consumer)
+          temp[room.name].peers[uid].consumers.push({ producerUid, consumer })
 
           UpdateRouters(temp)
         } catch (e) {
@@ -369,7 +420,7 @@ export const socketHandler = async () => {
         consumer.on('transportclose', () => {
           consumer.close()
           const temp = AllRouters
-          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.consumer.id === consumer.id)
           UpdateRouters(temp)
         })
 
@@ -380,18 +431,26 @@ export const socketHandler = async () => {
 
           consumer.close()
           const temp = AllRouters
-          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.consumer.id === consumer.id)
           temp.AllRouters[room.name].peers[uid].receiverTransport = temp.AllRouters[room.name].peers[uid].receiverTransport.filter((elem) => elem.id !== ConsumerTransportToConsume.id)
           UpdateRouters(temp)
         })
 
+        consumer.observer.on("pause", () => {
+          socket.emit("consumer-paused", { consumerId: consumer.id, uid: producerUid })
+        })
+
+        consumer.observer.on("resume", () => {
+          socket.emit("consumer-resume", { consumerId: consumer.id, uid: producerUid })
+        })
+
+
         consumer.observer.on("close", () => {
           consumer.close()
           const temp = AllRouters
-          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid].consumers.filter((item) => item.id === consumer.id)
+          temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[room.name].peers[uid]?.consumers.filter((item) => item.consumer.id === consumer.id)
           UpdateRouters(temp)
         })
-
 
         const data = {
           id: consumer.id,
@@ -409,20 +468,92 @@ export const socketHandler = async () => {
       }
     })
 
-    socket.on("resume-consumer", async ({ consumer_id }) => {
+    socket.on("resume-consumer", async ({ consumer_id }, callback) => {
       try {
-        await AllRouters[room.name].peers[uid].consumers.find((item) => item.id === consumer_id).resume()
+        const consumer = AllRouters[room.name].peers[uid].consumers.find((item) => item.consumer.id === consumer_id).consumer
+
+        if (!consumer.producerPaused) {
+          await consumer.resume()
+          return
+        }
+
+        callback({ keepPaused: consumer.producerPaused || null })
       } catch (e) {
         console.log("error while resuming track ", e.message)
       }
     })
 
+
+    //for volume observer logic starts from here
+    socket.on("enable-volume-observer", async (callback) => {
+      if (AllRouters[room.name].audioLevelObserver) {
+        return callback()
+      }
+
+      const router = AllRouters[room.name].router
+
+
+      try {
+        const audioLevelObserver = await router.createAudioLevelObserver(defaultAudioVolumeObserverConfig);
+
+        const temp = AllRouters
+
+        const existingPeers = Object.keys(AllRouters[room.name].peers)
+
+        existingPeers.forEach((elem) => {
+          AllRouters[room.name].peers[elem].producers.forEach(async (item) => {
+            if (producer.kind === "audio") {
+              try {
+                await audioLevelObserver.addProducer({ producerId: item.producer.id })
+              }
+              catch (e) {
+                console.log("error occured while adding producer for volume observer", e)
+              }
+            }
+          })
+        })
+
+        temp[room.name].audioLevelObserver = audioLevelObserver
+
+        UpdateRouters(temp)
+
+        audioLevelObserver.on("volumes", (volumes) => {
+          const volumesObj = {}
+
+          volumes.forEach((item) => {
+            const allPeers = Object.keys(AllRouters[room.name].peers)
+
+            allPeers.forEach((thisUserId) => {
+              const producer = AllRouters[room.name].peers[thisUserId].producers.find((elem) => elem.producer.id === item.producer.id)
+
+              if (producer) {
+                volumesObj[thisUserId] = convertDBsTo0To100(item.volume);
+              }
+
+            })
+
+            io.in(room.name).emit("volumes", volumesObj)
+          })
+        })
+
+        audioLevelObserver.on("silence", () => {
+          io.in(room.name).emit("volumes", {})
+        })
+
+        callback()
+      }
+      catch (e) {
+        callback(e.message)
+      }
+    })
+
+
     socket.on("consumer-closed", ({ consumerId }) => {
       const temp = AllRouters
       temp[room.name].peers[uid].consumers = temp[room.name].peers[uid].consumers.filter((item) => {
 
-        if (consumerId === item.id) {
-          item.close()
+        if (consumerId === item.consumer.id) {
+          item.consumer.close()
         }
 
         return item.id !== consumerId

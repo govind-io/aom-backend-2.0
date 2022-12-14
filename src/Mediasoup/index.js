@@ -1,7 +1,15 @@
 import { createWorker } from "mediasoup";
 import * as os from "os"
 export const CreateWorker = async () => {
-    const worker = await createWorker()
+    let worker
+
+    if (process.env.PROD === "true") {
+        worker = await createWorker({ rtcMaxPort: process.env.RTCMAXPORT, rtcMinPort: process.env.RTCMINPORT })
+    }
+
+    else {
+        worker = await createWorker()
+    }
 
     console.log(`Worker pid is ${worker.pid}`)
 
@@ -15,71 +23,77 @@ export const CreateWorker = async () => {
     return worker
 }
 
-export const Worker =[] 
+export const Worker = []
 
-export let ActiveWorkerIDX=0
+export let ActiveWorkerIDX = 0
 
-export const UpdateActiveWorkerIDX=(val)=>{
-    ActiveWorkerIDX=val
+export const UpdateActiveWorkerIDX = (val) => {
+    ActiveWorkerIDX = val
 }
 
-Object.keys(os.cpus()).forEach(async()=>{
+
+if (process.env.PROD === "true") {
+    Object.keys(os.cpus()).forEach(async () => {
+        Worker.push(await CreateWorker())
+    })
+} else {
     Worker.push(await CreateWorker())
-})
+}
+
 
 
 
 export const mediaCodecs = [
-				{
-					kind      : 'audio',
-					mimeType  : 'audio/opus',
-					clockRate : 48000,
-					channels  : 2
-				},
-				{
-					kind       : 'video',
-					mimeType   : 'video/VP8',
-					clockRate  : 90000,
-					parameters :
-					{
-						'x-google-start-bitrate' : 1000
-					}
-				},
-				{
-					kind       : 'video',
-					mimeType   : 'video/VP9',
-					clockRate  : 90000,
-					parameters :
-					{
-						'profile-id'             : 2,
-						'x-google-start-bitrate' : 1000
-					}
-				},
-				{
-					kind       : 'video',
-					mimeType   : 'video/h264',
-					clockRate  : 90000,
-					parameters :
-					{
-						'packetization-mode'      : 1,
-						'profile-level-id'        : '4d0032',
-						'level-asymmetry-allowed' : 1,
-						'x-google-start-bitrate'  : 1000
-					}
-				},
-				{
-					kind       : 'video',
-					mimeType   : 'video/h264',
-					clockRate  : 90000,
-					parameters :
-					{
-						'packetization-mode'      : 1,
-						'profile-level-id'        : '42e01f',
-						'level-asymmetry-allowed' : 1,
-						'x-google-start-bitrate'  : 1000
-					}
-				}
-			]
+    {
+        kind: 'audio',
+        mimeType: 'audio/opus',
+        clockRate: 48000,
+        channels: 2
+    },
+    {
+        kind: 'video',
+        mimeType: 'video/VP8',
+        clockRate: 90000,
+        parameters:
+        {
+            'x-google-start-bitrate': 1000
+        }
+    },
+    {
+        kind: 'video',
+        mimeType: 'video/VP9',
+        clockRate: 90000,
+        parameters:
+        {
+            'profile-id': 2,
+            'x-google-start-bitrate': 1000
+        }
+    },
+    {
+        kind: 'video',
+        mimeType: 'video/h264',
+        clockRate: 90000,
+        parameters:
+        {
+            'packetization-mode': 1,
+            'profile-level-id': '4d0032',
+            'level-asymmetry-allowed': 1,
+            'x-google-start-bitrate': 1000
+        }
+    },
+    {
+        kind: 'video',
+        mimeType: 'video/h264',
+        clockRate: 90000,
+        parameters:
+        {
+            'packetization-mode': 1,
+            'profile-level-id': '42e01f',
+            'level-asymmetry-allowed': 1,
+            'x-google-start-bitrate': 1000
+        }
+    }
+]
 
 
 export let AllRouters = {}
@@ -97,7 +111,7 @@ export const CreateWebRTCTransport = (router) => {
                 listenIps: [
                     {
                         ip: '0.0.0.0',
-                        announcedIp: '127.0.0.1', // replace with relevant IP address
+                        announcedIp: process.env.ANNOUNCEDIP
                     }
                 ],
                 enableUdp: true,
@@ -125,4 +139,24 @@ export const CreateWebRTCTransport = (router) => {
             reject(error)
         }
     })
+}
+
+
+export const defaultAudioVolumeObserverConfig = {
+    maxEntries: 50,
+    threshold: -40,
+    interval: 800
+}
+
+
+export const convertDBsTo0To100 = function (dBs) {
+    // Convert from dBs to linear scale
+
+    var linear = Math.round(Math.pow(10, dBs / 85) * 10);
+
+    if (linear === 1) {
+        return 0
+    }
+
+    return linear;
 }
