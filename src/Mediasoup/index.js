@@ -4,7 +4,7 @@ export const CreateWorker = async () => {
 	let worker
 
 	if (process.env.PROD === "true") {
-		worker = await createWorker({ rtcMaxPort: process.env.RTCMAXPORT, rtcMinPort: process.env.RTCMINPORT })
+		worker = await createWorker({ rtcMaxPort: parseInt(process.env.RTCMAXPORT), rtcMinPort: parseInt(process.env.RTCMINPORT) })
 	}
 
 	else {
