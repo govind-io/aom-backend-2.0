@@ -72,10 +72,15 @@ export const socketHandler = async () => {
         }
 
         const rtpCapabilities = await routerExists.rtpCapabilities;
-        UpdateRouters({
-          ...AllRouters,
-          [roomname]: { router: routerExists, rtpCapabilities, peers: {} },
-        });
+
+        const temp = AllRouters;
+
+        temp[roomname] = {
+          routers: [{ router: routerExists, rtpCapabilities }],
+          peers: {},
+        };
+
+        UpdateRouters(temp);
       }
 
       next();
@@ -193,7 +198,7 @@ export const socketHandler = async () => {
         });
 
         if (Object.keys(newPeers).length === 0) {
-          await AllRouters[room.name].router.close();
+          await AllRouters[room.name].routers[0].router.close();
           const temp = AllRouters;
 
           delete temp[room.name];
@@ -227,7 +232,8 @@ export const socketHandler = async () => {
 
     //step one - Loading the device irrespective of the role
     socket.on("get-rtp-capabilities", async (callback) => {
-      const routerRtpCapabilities = AllRouters[room.name].rtpCapabilities;
+      const routerRtpCapabilities =
+        AllRouters[room.name].routers[0].rtpCapabilities;
       callback({ routerRtpCapabilities });
     });
 
@@ -278,7 +284,7 @@ export const socketHandler = async () => {
 
       try {
         const producerTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].router
+          AllRouters[room.name].routers[0].router
         );
         const params = {
           id: producerTransport.id,
@@ -428,7 +434,7 @@ export const socketHandler = async () => {
     socket.on("create-reciever-transport", async (callback) => {
       try {
         const receiverTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].router
+          AllRouters[room.name].routers[0].router
         );
         const params = {
           id: receiverTransport.id,
@@ -504,7 +510,7 @@ export const socketHandler = async () => {
         );
 
         if (
-          AllRouters[room.name].router.canConsume({
+          AllRouters[room.name].routers[0].router.canConsume({
             producerId,
             rtpCapabilities,
           }) &&
@@ -625,7 +631,7 @@ export const socketHandler = async () => {
         return callback();
       }
 
-      const router = AllRouters[room.name].router;
+      const router = AllRouters[room.name].routers[0].router;
 
       try {
         const audioLevelObserver = await router.createAudioLevelObserver(
