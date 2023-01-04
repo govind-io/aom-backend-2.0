@@ -13,6 +13,13 @@ import {
   UpdateRouters,
   Worker,
 } from "./Mediasoup/index.js";
+import {
+  AddProducerToRouter,
+  ChooseRouter,
+  PipeToAllRouters,
+  RemoveLoadOnRouter,
+  RemoveProducerToRouter,
+} from "./Mediasoup/LoadBalancingUtils.js";
 
 export const socketHandler = async () => {
   io.use(async (socket, next) => {
@@ -159,6 +166,7 @@ export const socketHandler = async () => {
       role,
       transport: "",
       receiverTransport: [],
+      router: await ChooseRouter({ roomname: room.name }),
     };
 
     UpdateRouters(temp);
@@ -169,6 +177,11 @@ export const socketHandler = async () => {
 
     socket.on("disconnect", async (reason) => {
       socket.to(room.name).emit("user-left", { uid, role });
+
+      RemoveLoadOnRouter({
+        roomname: room.name,
+        routerId: AllRouters[room.name].peers[uid].router.router.id,
+      });
 
       if (reason === "server namespace disconnect") {
         return;
@@ -245,7 +258,8 @@ export const socketHandler = async () => {
     //step one - Loading the device irrespective of the role
     socket.on("get-rtp-capabilities", async (callback) => {
       const routerRtpCapabilities =
-        AllRouters[room.name].routers[0].rtpCapabilities;
+        AllRouters[room.name].peers[uid].router.rtpCapabilities;
+
       callback({ routerRtpCapabilities });
     });
 
@@ -295,9 +309,9 @@ export const socketHandler = async () => {
       }
 
       try {
-        const producerTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].routers[0].router
-        );
+        const peerRouter = AllRouters[room.name].peers[uid].router.router;
+        const producerTransport = await CreateWebRTCTransport(peerRouter);
+
         const params = {
           id: producerTransport.id,
           iceParameters: producerTransport.iceParameters,
@@ -353,6 +367,21 @@ export const socketHandler = async () => {
             rtpParameters,
             kind,
           });
+
+          const peerRouter = AllRouters[room.name].peers[uid].router.router;
+
+          AddProducerToRouter({
+            roomname: room.name,
+            routerId: peerRouter.id,
+            producerId: producer.id,
+          });
+
+          PipeToAllRouters({
+            roomname: room.name,
+            producer: producer,
+            routerId: peerRouter.id,
+          });
+
           socket.to(room.name).emit("user-published", {
             uid,
             producerId: producer.id,
@@ -397,6 +426,12 @@ export const socketHandler = async () => {
           temp[room.name].peers[uid].producers = temp[room.name].peers[
             uid
           ]?.producers.filter((elem) => elem.producer.id !== producer.id);
+
+          RemoveProducerToRouter({
+            roomname: room.name,
+            routerId: AllRouters[room.name].peers[uid].router.router.id,
+            producerId: producer.id,
+          });
 
           UpdateRouters(temp);
         });
@@ -446,7 +481,7 @@ export const socketHandler = async () => {
     socket.on("create-reciever-transport", async (callback) => {
       try {
         const receiverTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].routers[0].router
+          AllRouters[room.name].peers[uid].router.router
         );
         const params = {
           id: receiverTransport.id,
@@ -457,15 +492,13 @@ export const socketHandler = async () => {
 
         const temp = AllRouters;
 
-        temp[room.name].peers.push({
-          [uid]: {
-            ...AllRouters[room.name].peers[uid],
-            receiverTransport: [
-              ...AllRouters[room.name].peers[uid].receiverTransport,
-              receiverTransport,
-            ],
-          },
-        });
+        temp[room.name].peers[uid] = {
+          ...AllRouters[room.name].peers[uid],
+          receiverTransport: [
+            ...AllRouters[room.name].peers[uid].receiverTransport,
+            receiverTransport,
+          ],
+        };
 
         UpdateRouters(temp);
 
@@ -519,7 +552,7 @@ export const socketHandler = async () => {
         );
 
         if (
-          AllRouters[room.name].routers[0].router.canConsume({
+          AllRouters[room.name].peers[uid].router.router.canConsume({
             producerId,
             rtpCapabilities,
           }) &&

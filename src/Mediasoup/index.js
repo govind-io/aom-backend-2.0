@@ -30,7 +30,7 @@ export const UpdateActiveWorkerIDX = (val) => {
   ActiveWorkerIDX = val;
 };
 
-if (process.env.PROD === "true") {
+if (process.env.PROD === "false") {
   Object.keys(os.cpus()).forEach(async () => {
     Worker.push(await CreateWorker());
   });
@@ -90,6 +90,8 @@ export let AllRouters = {};
 
 export const UpdateRouters = (newRouters) => {
   AllRouters = newRouters;
+
+  // console.log("new Routers ", newRouters.loktantram.routers);
 };
 
 export const CreateWebRTCTransport = (router) => {
