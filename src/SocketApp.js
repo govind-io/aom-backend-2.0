@@ -65,20 +65,29 @@ export const socketHandler = async () => {
           mediaCodecs,
         });
 
-        if (ActiveWorkerIDX + 1 === Worker.length) {
-          UpdateActiveWorkerIDX(0);
-        } else {
-          UpdateActiveWorkerIDX(ActiveWorkerIDX + 1);
-        }
-
         const rtpCapabilities = await routerExists.rtpCapabilities;
 
         const temp = AllRouters;
 
         temp[roomname] = {
-          routers: [{ router: routerExists, rtpCapabilities }],
+          routers: [
+            {
+              router: routerExists,
+              rtpCapabilities,
+              worker: Worker[ActiveWorkerIDX],
+              load: 0,
+              producers: [],
+              consumers: [],
+            },
+          ],
           peers: {},
         };
+
+        if (ActiveWorkerIDX + 1 === Worker.length) {
+          UpdateActiveWorkerIDX(0);
+        } else {
+          UpdateActiveWorkerIDX(ActiveWorkerIDX + 1);
+        }
 
         UpdateRouters(temp);
       }
@@ -198,7 +207,10 @@ export const socketHandler = async () => {
         });
 
         if (Object.keys(newPeers).length === 0) {
-          await AllRouters[room.name].routers[0].router.close();
+          await AllRouters[room.name].routers.forEach((item) => {
+            item.router.close();
+          });
+
           const temp = AllRouters;
 
           delete temp[room.name];
@@ -443,22 +455,19 @@ export const socketHandler = async () => {
           dtlsParameters: receiverTransport.dtlsParameters,
         };
 
-        UpdateRouters({
-          ...AllRouters,
-          [room.name]: {
-            ...AllRouters[room.name],
-            peers: {
-              ...AllRouters[room.name].peers,
-              [uid]: {
-                ...AllRouters[room.name].peers[uid],
-                receiverTransport: [
-                  ...AllRouters[room.name].peers[uid].receiverTransport,
-                  receiverTransport,
-                ],
-              },
-            },
+        const temp = AllRouters;
+
+        temp[room.name].peers.push({
+          [uid]: {
+            ...AllRouters[room.name].peers[uid],
+            receiverTransport: [
+              ...AllRouters[room.name].peers[uid].receiverTransport,
+              receiverTransport,
+            ],
           },
         });
+
+        UpdateRouters(temp);
 
         callback(params, null);
       } catch (e) {
