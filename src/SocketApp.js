@@ -5,7 +5,6 @@ import { Room } from "./database/Models/rooms.js";
 import {
   ActiveWorkerIDX,
   AllRouters,
-  convertDBsTo0To100,
   CreateWebRTCTransport,
   defaultAudioVolumeObserverConfig,
   mediaCodecs,
@@ -20,6 +19,7 @@ import {
   RemoveLoadOnRouter,
   RemoveProducerToRouter,
 } from "./Mediasoup/LoadBalancingUtils.js";
+import { CreateAndHandleAudioLevelObserverEvents } from "./Mediasoup/AudioLevelObserver.js";
 
 export const socketHandler = async () => {
   io.use(async (socket, next) => {
@@ -85,9 +85,11 @@ export const socketHandler = async () => {
               load: 0,
               producers: [],
               consumers: [],
+              audioLevelObserver: undefined,
             },
           ],
           peers: {},
+          volumes: {},
         };
 
         if (ActiveWorkerIDX + 1 === Worker.length) {
@@ -374,6 +376,7 @@ export const socketHandler = async () => {
             roomname: room.name,
             routerId: peerRouter.id,
             producerId: producer.id,
+            kind: producer.kind,
           });
 
           PipeToAllRouters({
@@ -389,16 +392,6 @@ export const socketHandler = async () => {
             kind,
             type,
           });
-
-          const audioLevelObserver = AllRouters[room.name].audioLevelObserver;
-
-          if (audioLevelObserver && producer.kind === "audio") {
-            try {
-              await audioLevelObserver.addProducer({ producerId: producer.id });
-            } catch (e) {
-              console.log("catch error ", e);
-            }
-          }
         } catch (e) {
           console.log("error occured", e);
           return callback({ error: e });
@@ -431,6 +424,7 @@ export const socketHandler = async () => {
             roomname: room.name,
             routerId: AllRouters[room.name].peers[uid].router.router.id,
             producerId: producer.id,
+            kind: producer.kind,
           });
 
           UpdateRouters(temp);
@@ -672,67 +666,22 @@ export const socketHandler = async () => {
       if (AllRouters[room.name].audioLevelObserver) {
         return callback();
       }
-
-      const router = AllRouters[room.name].routers[0].router;
-
       try {
-        const audioLevelObserver = await router.createAudioLevelObserver(
-          defaultAudioVolumeObserverConfig
-        );
-
-        const temp = AllRouters;
-
-        const existingPeers = Object.keys(AllRouters[room.name].peers);
-
-        existingPeers.forEach((elem) => {
-          AllRouters[room.name].peers[elem].producers.forEach(async (item) => {
-            if (producer.kind === "audio") {
-              try {
-                await audioLevelObserver.addProducer({
-                  producerId: item.producer.id,
-                });
-              } catch (e) {
-                console.log(
-                  "error occured while adding producer for volume observer",
-                  e
-                );
-              }
-            }
+        await AllRouters[room.name].routers.forEach(async (item) => {
+          await CreateAndHandleAudioLevelObserverEvents({
+            roomname: room.name,
+            mainRouterObj: item,
           });
         });
-
-        temp[room.name].audioLevelObserver = audioLevelObserver;
-
-        UpdateRouters(temp);
-
-        audioLevelObserver.on("volumes", (volumes) => {
-          const volumesObj = {};
-
-          volumes.forEach((item) => {
-            const allPeers = Object.keys(AllRouters[room.name].peers);
-
-            allPeers.forEach((thisUserId) => {
-              const producer = AllRouters[room.name].peers[
-                thisUserId
-              ].producers.find((elem) => elem.producer.id === item.producer.id);
-
-              if (producer) {
-                volumesObj[thisUserId] = convertDBsTo0To100(item.volume);
-              }
-            });
-
-            io.in(room.name).emit("volumes", volumesObj);
-          });
-        });
-
-        audioLevelObserver.on("silence", () => {
-          io.in(room.name).emit("volumes", {});
-        });
-
-        callback();
       } catch (e) {
         callback(e.message);
       }
+
+      setInterval(() => {
+        io.in(room.name).emit("volumes", AllRouters[room.name].volumes);
+      }, [defaultAudioVolumeObserverConfig.interval]);
+
+      callback();
     });
 
     socket.on("consumer-closed", ({ consumerId }) => {

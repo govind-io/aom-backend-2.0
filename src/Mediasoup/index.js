@@ -90,8 +90,6 @@ export let AllRouters = {};
 
 export const UpdateRouters = (newRouters) => {
   AllRouters = newRouters;
-
-  // console.log("new Routers ", newRouters.loktantram.routers);
 };
 
 export const CreateWebRTCTransport = (router) => {

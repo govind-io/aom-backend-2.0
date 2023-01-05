@@ -1,5 +1,6 @@
 import { AllRouters, Worker, mediaCodecs, UpdateRouters } from "./index.js";
 import * as os from "os";
+import { CreateAndHandleAudioLevelObserverEvents } from "./AudioLevelObserver.js";
 
 export const addLoadOnRouter = ({ roomname, routerId }) => {
   const routers = AllRouters[roomname].routers;
@@ -55,20 +56,14 @@ export const ChooseRouter = async ({ roomname }) => {
   console.log("choose router called");
   const routers = AllRouters[roomname].routers;
   let leastLoadedRouter = routers[0];
+
+  if (!leastLoadedRouter) return;
+
   for (let router of routers) {
     if (router.load < leastLoadedRouter.load) {
       leastLoadedRouter = router;
     }
   }
-
-  console.log(
-    parseInt(process.env.ROUTER_MAX_LOAD),
-    leastLoadedRouter.load,
-    routers.length,
-    leastLoadedRouter.load > parseInt(process.env.ROUTER_MAX_LOAD) &&
-      routers.length < os.cpus().length,
-    "here is the requirement"
-  );
 
   const temp = AllRouters;
 
@@ -88,6 +83,11 @@ export const ChooseRouter = async ({ roomname }) => {
     const newRouter = await unusedWorker.createRouter({
       mediaCodecs,
     });
+
+    let audioLevelObserver = undefined;
+
+    if (AllRouters[roomname].audioLevelObserver) {
+    }
 
     const rtpCapabilities = await newRouter.rtpCapabilities;
 
@@ -110,11 +110,14 @@ export const ChooseRouter = async ({ roomname }) => {
       producers: [],
     };
 
-    console.log("new router returned");
-
     temp[roomname].routers.push(leastLoadedRouter);
 
     UpdateRouters(temp);
+
+    CreateAndHandleAudioLevelObserverEvents({
+      roomname: roomname,
+      mainRouterObj: leastLoadedRouter,
+    });
   }
 
   UpdateRouters(temp);
@@ -124,7 +127,12 @@ export const ChooseRouter = async ({ roomname }) => {
   return leastLoadedRouter;
 };
 
-export const AddProducerToRouter = ({ roomname, routerId, producerId }) => {
+export const AddProducerToRouter = async ({
+  roomname,
+  routerId,
+  producerId,
+  kind,
+}) => {
   const routers = AllRouters[roomname].routers;
 
   const temp = AllRouters;
@@ -138,10 +146,27 @@ export const AddProducerToRouter = ({ roomname, routerId, producerId }) => {
     } else return item;
   });
 
+  const audioLevelObserver = temp[roomname].routers.find(
+    (item) => item.router.id === routerId
+  ).audioLevelObserver;
+
+  if (audioLevelObserver && kind === "audio") {
+    try {
+      await audioLevelObserver.addProducer({ producerId });
+    } catch (e) {
+      console.log("catch error ", e);
+    }
+  }
+
   UpdateRouters(temp);
 };
 
-export const RemoveProducerToRouter = ({ roomname, routerId, producerId }) => {
+export const RemoveProducerToRouter = async ({
+  roomname,
+  routerId,
+  producerId,
+  kind,
+}) => {
   const routers = AllRouters[roomname].routers;
 
   const temp = AllRouters;
@@ -156,6 +181,18 @@ export const RemoveProducerToRouter = ({ roomname, routerId, producerId }) => {
       return localItem;
     } else return item;
   });
+
+  const audioLevelObserver = temp[roomname].routers.find(
+    (item) => item.router.id === routerId
+  ).audioLevelObserver;
+
+  if (audioLevelObserver && kind === "audio") {
+    try {
+      await audioLevelObserver.removeProducer({ producerId });
+    } catch (e) {
+      console.log("catch error ", e);
+    }
+  }
 
   UpdateRouters(temp);
 };
