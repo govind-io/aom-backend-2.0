@@ -228,6 +228,10 @@ export const socketHandler = async () => {
 
           const temp = AllRouters;
 
+          if (temp[room.name].intervalHandler) {
+            clearInterval(temp[room.name].intervalHandler);
+          }
+
           delete temp[room.name];
 
           UpdateRouters(temp);
@@ -677,9 +681,15 @@ export const socketHandler = async () => {
         callback(e.message);
       }
 
-      setInterval(() => {
+      const interval = setInterval(() => {
         io.in(room.name).emit("volumes", AllRouters[room.name].volumes);
       }, [defaultAudioVolumeObserverConfig.interval]);
+
+      const temp = AllRouters;
+
+      temp[room.name].intervalHandler = interval;
+
+      UpdateRouters(temp);
 
       callback();
     });

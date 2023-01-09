@@ -92,14 +92,11 @@ export const CreateAndHandleAudioLevelObserverEvents = async ({
       });
 
       if (mutedUser) {
-        console.log("deleting user id ", userId);
         return delete temp[roomname].volumes[userId];
       }
 
       return;
     });
-
-    console.log("new temp array ", temp[roomname].volumes);
 
     UpdateRouters(temp);
   });
