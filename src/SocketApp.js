@@ -159,6 +159,8 @@ export const socketHandler = async () => {
     socket.join(room.name);
     const temp = AllRouters;
 
+    const peerRouter = await ChooseRouter({ roomname: room.name });
+
     temp[room.name].peers[uid] = {
       id: socket.id,
       roomname: room.name,
@@ -168,7 +170,7 @@ export const socketHandler = async () => {
       role,
       transport: "",
       receiverTransport: [],
-      router: await ChooseRouter({ roomname: room.name }),
+      router: peerRouter,
     };
 
     UpdateRouters(temp);
@@ -263,6 +265,7 @@ export const socketHandler = async () => {
 
     //step one - Loading the device irrespective of the role
     socket.on("get-rtp-capabilities", async (callback) => {
+      console.log("peer is ", AllRouters[room.name].peers[uid].router);
       const routerRtpCapabilities =
         AllRouters[room.name].peers[uid].router.rtpCapabilities;
 
