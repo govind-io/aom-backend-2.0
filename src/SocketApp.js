@@ -5,7 +5,6 @@ import { Room } from "./database/Models/rooms.js";
 import {
   ActiveWorkerIDX,
   AllRouters,
-  convertDBsTo0To100,
   CreateWebRTCTransport,
   defaultAudioVolumeObserverConfig,
   mediaCodecs,
@@ -13,6 +12,14 @@ import {
   UpdateRouters,
   Worker,
 } from "./Mediasoup/index.js";
+import {
+  AddProducerToRouter,
+  ChooseRouter,
+  PipeToAllRouters,
+  RemoveLoadOnRouter,
+  RemoveProducerToRouter,
+} from "./Mediasoup/LoadBalancingUtils.js";
+import { CreateAndHandleAudioLevelObserverEvents } from "./Mediasoup/AudioLevelObserver.js";
 
 export const socketHandler = async () => {
   io.use(async (socket, next) => {
@@ -65,20 +72,31 @@ export const socketHandler = async () => {
           mediaCodecs,
         });
 
-        if (ActiveWorkerIDX + 1 === Worker.length) {
-          UpdateActiveWorkerIDX(0);
-        } else {
-          UpdateActiveWorkerIDX(ActiveWorkerIDX + 1);
-        }
-
         const rtpCapabilities = await routerExists.rtpCapabilities;
 
         const temp = AllRouters;
 
         temp[roomname] = {
-          routers: [{ router: routerExists, rtpCapabilities }],
+          routers: [
+            {
+              router: routerExists,
+              rtpCapabilities,
+              worker: Worker[ActiveWorkerIDX],
+              load: 0,
+              producers: [],
+              consumers: [],
+              audioLevelObserver: undefined,
+            },
+          ],
           peers: {},
+          volumes: {},
         };
+
+        if (ActiveWorkerIDX + 1 === Worker.length) {
+          UpdateActiveWorkerIDX(0);
+        } else {
+          UpdateActiveWorkerIDX(ActiveWorkerIDX + 1);
+        }
 
         UpdateRouters(temp);
       }
@@ -150,6 +168,7 @@ export const socketHandler = async () => {
       role,
       transport: "",
       receiverTransport: [],
+      router: await ChooseRouter({ roomname: room.name }),
     };
 
     UpdateRouters(temp);
@@ -160,6 +179,11 @@ export const socketHandler = async () => {
 
     socket.on("disconnect", async (reason) => {
       socket.to(room.name).emit("user-left", { uid, role });
+
+      RemoveLoadOnRouter({
+        roomname: room.name,
+        routerId: AllRouters[room.name].peers[uid].router.router.id,
+      });
 
       if (reason === "server namespace disconnect") {
         return;
@@ -198,8 +222,15 @@ export const socketHandler = async () => {
         });
 
         if (Object.keys(newPeers).length === 0) {
-          await AllRouters[room.name].routers[0].router.close();
+          await AllRouters[room.name].routers.forEach((item) => {
+            item.router.close();
+          });
+
           const temp = AllRouters;
+
+          if (temp[room.name].intervalHandler) {
+            clearInterval(temp[room.name].intervalHandler);
+          }
 
           delete temp[room.name];
 
@@ -233,7 +264,8 @@ export const socketHandler = async () => {
     //step one - Loading the device irrespective of the role
     socket.on("get-rtp-capabilities", async (callback) => {
       const routerRtpCapabilities =
-        AllRouters[room.name].routers[0].rtpCapabilities;
+        AllRouters[room.name].peers[uid].router.rtpCapabilities;
+
       callback({ routerRtpCapabilities });
     });
 
@@ -283,9 +315,9 @@ export const socketHandler = async () => {
       }
 
       try {
-        const producerTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].routers[0].router
-        );
+        const peerRouter = AllRouters[room.name].peers[uid].router.router;
+        const producerTransport = await CreateWebRTCTransport(peerRouter);
+
         const params = {
           id: producerTransport.id,
           iceParameters: producerTransport.iceParameters,
@@ -341,6 +373,22 @@ export const socketHandler = async () => {
             rtpParameters,
             kind,
           });
+
+          const peerRouter = AllRouters[room.name].peers[uid].router.router;
+
+          AddProducerToRouter({
+            roomname: room.name,
+            routerId: peerRouter.id,
+            producerId: producer.id,
+            kind: producer.kind,
+          });
+
+          PipeToAllRouters({
+            roomname: room.name,
+            producer: producer,
+            routerId: peerRouter.id,
+          });
+
           socket.to(room.name).emit("user-published", {
             uid,
             producerId: producer.id,
@@ -348,16 +396,6 @@ export const socketHandler = async () => {
             kind,
             type,
           });
-
-          const audioLevelObserver = AllRouters[room.name].audioLevelObserver;
-
-          if (audioLevelObserver && producer.kind === "audio") {
-            try {
-              await audioLevelObserver.addProducer({ producerId: producer.id });
-            } catch (e) {
-              console.log("catch error ", e);
-            }
-          }
         } catch (e) {
           console.log("error occured", e);
           return callback({ error: e });
@@ -385,6 +423,13 @@ export const socketHandler = async () => {
           temp[room.name].peers[uid].producers = temp[room.name].peers[
             uid
           ]?.producers.filter((elem) => elem.producer.id !== producer.id);
+
+          RemoveProducerToRouter({
+            roomname: room.name,
+            routerId: AllRouters[room.name].peers[uid].router.router.id,
+            producerId: producer.id,
+            kind: producer.kind,
+          });
 
           UpdateRouters(temp);
         });
@@ -434,7 +479,7 @@ export const socketHandler = async () => {
     socket.on("create-reciever-transport", async (callback) => {
       try {
         const receiverTransport = await CreateWebRTCTransport(
-          AllRouters[room.name].routers[0].router
+          AllRouters[room.name].peers[uid].router.router
         );
         const params = {
           id: receiverTransport.id,
@@ -443,22 +488,17 @@ export const socketHandler = async () => {
           dtlsParameters: receiverTransport.dtlsParameters,
         };
 
-        UpdateRouters({
-          ...AllRouters,
-          [room.name]: {
-            ...AllRouters[room.name],
-            peers: {
-              ...AllRouters[room.name].peers,
-              [uid]: {
-                ...AllRouters[room.name].peers[uid],
-                receiverTransport: [
-                  ...AllRouters[room.name].peers[uid].receiverTransport,
-                  receiverTransport,
-                ],
-              },
-            },
-          },
-        });
+        const temp = AllRouters;
+
+        temp[room.name].peers[uid] = {
+          ...AllRouters[room.name].peers[uid],
+          receiverTransport: [
+            ...AllRouters[room.name].peers[uid].receiverTransport,
+            receiverTransport,
+          ],
+        };
+
+        UpdateRouters(temp);
 
         callback(params, null);
       } catch (e) {
@@ -510,7 +550,7 @@ export const socketHandler = async () => {
         );
 
         if (
-          AllRouters[room.name].routers[0].router.canConsume({
+          AllRouters[room.name].peers[uid].router.router.canConsume({
             producerId,
             rtpCapabilities,
           }) &&
@@ -630,67 +670,28 @@ export const socketHandler = async () => {
       if (AllRouters[room.name].audioLevelObserver) {
         return callback();
       }
-
-      const router = AllRouters[room.name].routers[0].router;
-
       try {
-        const audioLevelObserver = await router.createAudioLevelObserver(
-          defaultAudioVolumeObserverConfig
-        );
-
-        const temp = AllRouters;
-
-        const existingPeers = Object.keys(AllRouters[room.name].peers);
-
-        existingPeers.forEach((elem) => {
-          AllRouters[room.name].peers[elem].producers.forEach(async (item) => {
-            if (producer.kind === "audio") {
-              try {
-                await audioLevelObserver.addProducer({
-                  producerId: item.producer.id,
-                });
-              } catch (e) {
-                console.log(
-                  "error occured while adding producer for volume observer",
-                  e
-                );
-              }
-            }
+        await AllRouters[room.name].routers.forEach(async (item) => {
+          await CreateAndHandleAudioLevelObserverEvents({
+            roomname: room.name,
+            mainRouterObj: item,
           });
         });
-
-        temp[room.name].audioLevelObserver = audioLevelObserver;
-
-        UpdateRouters(temp);
-
-        audioLevelObserver.on("volumes", (volumes) => {
-          const volumesObj = {};
-
-          volumes.forEach((item) => {
-            const allPeers = Object.keys(AllRouters[room.name].peers);
-
-            allPeers.forEach((thisUserId) => {
-              const producer = AllRouters[room.name].peers[
-                thisUserId
-              ].producers.find((elem) => elem.producer.id === item.producer.id);
-
-              if (producer) {
-                volumesObj[thisUserId] = convertDBsTo0To100(item.volume);
-              }
-            });
-
-            io.in(room.name).emit("volumes", volumesObj);
-          });
-        });
-
-        audioLevelObserver.on("silence", () => {
-          io.in(room.name).emit("volumes", {});
-        });
-
-        callback();
       } catch (e) {
         callback(e.message);
       }
+
+      const interval = setInterval(() => {
+        io.in(room.name).emit("volumes", AllRouters[room.name].volumes);
+      }, [defaultAudioVolumeObserverConfig.interval]);
+
+      const temp = AllRouters;
+
+      temp[room.name].intervalHandler = interval;
+
+      UpdateRouters(temp);
+
+      callback();
     });
 
     socket.on("consumer-closed", ({ consumerId }) => {
