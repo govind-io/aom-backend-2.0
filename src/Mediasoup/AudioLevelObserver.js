@@ -16,8 +16,6 @@ export const CreateAndHandleAudioLevelObserverEvents = async ({
     defaultAudioVolumeObserverConfig
   );
 
-  console.log("created audio level observer succesfully for router ", router);
-
   const temp = AllRouters;
 
   const existingPeers = Object.keys(AllRouters[roomname].peers);
@@ -72,7 +70,6 @@ export const CreateAndHandleAudioLevelObserverEvents = async ({
     const temp = AllRouters;
 
     temp[roomname].volumes = { ...temp[roomname].volumes, ...volumesObj };
-    console.log(volumesObj);
 
     UpdateRouters(temp);
   });
@@ -80,11 +77,8 @@ export const CreateAndHandleAudioLevelObserverEvents = async ({
   audioLevelObserver.on("silence", () => {
     const temp = AllRouters;
 
-    console.log({ temp, roomname, volumes: temp[roomname].volumes });
-
     Object.keys(temp[roomname].volumes).forEach((userId) => {
       const mutedUser = temp[roomname].peers[userId].producers.find((elem) => {
-        console.log({ item, elem });
         return (
           item.producers.includes(elem.producer.id) &&
           elem.producer.kind === "audio"

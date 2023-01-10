@@ -1,4 +1,10 @@
-import { AllRouters, Worker, mediaCodecs, UpdateRouters } from "./index.js";
+import {
+  AllRouters,
+  Worker,
+  mediaCodecs,
+  UpdateRouters,
+  ActiveWorkerIDX,
+} from "./index.js";
 import * as os from "os";
 import { CreateAndHandleAudioLevelObserverEvents } from "./AudioLevelObserver.js";
 
@@ -53,11 +59,27 @@ export const PipeToAllRouters = ({ roomname, producer, routerId }) => {
 };
 
 export const ChooseRouter = async ({ roomname }) => {
-  console.log("choose router called");
   const routers = AllRouters[roomname].routers;
+
   let leastLoadedRouter = routers[0];
 
-  if (!leastLoadedRouter) return;
+  if (!leastLoadedRouter) {
+    const newRouter = await Worker[ActiveWorkerIDX].createRouter({
+      mediaCodecs,
+    });
+
+    const rtpCapabilities = await newRouter.rtpCapabilities;
+
+    leastLoadedRouter = {
+      router: newRouter,
+      rtpCapabilities,
+      worker: Worker[ActiveWorkerIDX],
+      load: 0,
+      producers: [],
+      consumers: [],
+      audioLevelObserver: undefined,
+    };
+  }
 
   for (let router of routers) {
     if (router.load < leastLoadedRouter.load) {
@@ -71,11 +93,10 @@ export const ChooseRouter = async ({ roomname }) => {
     leastLoadedRouter.load > parseInt(process.env.ROUTER_MAX_LOAD) &&
     routers.length < os.cpus().length
   ) {
-    console.log("inside if block");
     const usedWorkers = routers.map((item) => {
       return item.worker.pid;
     });
-    console.log(usedWorkers, "used workers");
+
     const unusedWorker = Worker.find((item) => !usedWorkers.includes(item.pid));
 
     if (!unusedWorker) return leastLoadedRouter;
@@ -83,11 +104,6 @@ export const ChooseRouter = async ({ roomname }) => {
     const newRouter = await unusedWorker.createRouter({
       mediaCodecs,
     });
-
-    let audioLevelObserver = undefined;
-
-    if (AllRouters[roomname].audioLevelObserver) {
-    }
 
     const rtpCapabilities = await newRouter.rtpCapabilities;
 

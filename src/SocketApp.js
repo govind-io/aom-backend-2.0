@@ -188,6 +188,7 @@ export const socketHandler = async () => {
       });
 
       if (reason === "server namespace disconnect") {
+        console.log("disconnected due to server namespace disconnect");
         return;
       }
 
@@ -222,6 +223,8 @@ export const socketHandler = async () => {
             peers: newPeers,
           },
         });
+
+        console.log({ newPeers });
 
         if (Object.keys(newPeers).length === 0) {
           await AllRouters[room.name].routers.forEach((item) => {
@@ -265,7 +268,6 @@ export const socketHandler = async () => {
 
     //step one - Loading the device irrespective of the role
     socket.on("get-rtp-capabilities", async (callback) => {
-      console.log("peer is ", AllRouters[room.name].peers[uid].router);
       const routerRtpCapabilities =
         AllRouters[room.name].peers[uid].router.rtpCapabilities;
 
@@ -586,7 +588,7 @@ export const socketHandler = async () => {
             temp.AllRouters[room.name].peers[uid].consumers = temp.AllRouters[
               room.name
             ].peers[uid].consumers.filter(
-              (item) => item.consumer.id === consumer.id
+              (item) => item.consumer.id !== consumer.id
             );
             UpdateRouters(temp);
           });
