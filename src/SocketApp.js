@@ -213,7 +213,7 @@ export const socketHandler = async () => {
       }
 
       try {
-        const newPeers = { ...AllRouters[room.name].peers };
+        const newPeers = AllRouters[room.name].peers;
         delete newPeers[uid];
 
         UpdateRouters({

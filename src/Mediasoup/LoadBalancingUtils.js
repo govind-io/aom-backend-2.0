@@ -162,6 +162,8 @@ export const AddProducerToRouter = async ({
     } else return item;
   });
 
+  console.log({ allrouters: temp[roomname].routers, routerId: routerId });
+
   const audioLevelObserver = temp[roomname].routers.find(
     (item) => item.router.id === routerId
   ).audioLevelObserver;
