@@ -132,7 +132,7 @@ export const CreateWebRTCTransport = (router) => {
 
 export const defaultAudioVolumeObserverConfig = {
   maxEntries: 50,
-  threshold: -40,
+  threshold: -70,
   interval: 800,
 };
 
