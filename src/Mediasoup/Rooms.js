@@ -26,7 +26,7 @@ export class RTCRoom {
 
     await roomRouter.init(this);
 
-    if (ActiveWorkerIDX === Worker.length) {
+    if (ActiveWorkerIDX === Worker.length - 1) {
       UpdateActiveWorkerIDX(0);
     } else {
       UpdateActiveWorkerIDX(ActiveWorkerIDX + 1);
