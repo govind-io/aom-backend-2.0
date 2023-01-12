@@ -22,7 +22,7 @@ export class RoomRouter {
     this.id = newRouter.id;
 
     this.room.workers = this.room.workers.filter(
-      (item) => item.id !== this.worker.id
+      (item) => item.pid !== this.worker.pid
     );
   };
 
