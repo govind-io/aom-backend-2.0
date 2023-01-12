@@ -26,8 +26,6 @@ export class RTCRoom {
 
     await roomRouter.init(this);
 
-    console.log("new room initiated", roomRouter.id);
-
     if (ActiveWorkerIDX === Worker.length) {
       UpdateActiveWorkerIDX(0);
     } else {
@@ -107,8 +105,6 @@ export class RTCRoom {
         await roomRouter.CreateAndHandleAudioLevelObserver();
       }
     }
-
-    console.log("choosing router");
 
     return leastLoadedRouter;
   };

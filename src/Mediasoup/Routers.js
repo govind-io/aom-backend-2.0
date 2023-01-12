@@ -41,7 +41,6 @@ export class RoomRouter {
   };
 
   close = () => {
-    console.log("closed router ", this.id);
     this.router.close();
     this.room.removeRouter(this.id);
     this.room.workers.push(this.worker);

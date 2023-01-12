@@ -95,7 +95,10 @@ export class Peer {
     Room.findByIdAndUpdate(
       this.room.id,
       { $pull: { participants: { name: this.uid } } },
-      { new: true }
+      { new: true },
+      (data, err) => {
+        console.log("err updating participants list ", err);
+      }
     );
   };
 

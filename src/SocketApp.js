@@ -65,8 +65,6 @@ export const socketHandler = async () => {
         room: routerExists,
       };
 
-      console.log({ handshakeQuery: socket.handshake.query });
-
       next();
     } catch (e) {
       socket.disconnect();
