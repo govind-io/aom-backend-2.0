@@ -8,6 +8,9 @@ export const database = mongoose.connect(
     dbName: "Meet",
   },
   (err) => {
+    if (err) {
+      return console.log("could not connect to db", err.message);
+    }
     console.log("connected to db");
   }
 );
