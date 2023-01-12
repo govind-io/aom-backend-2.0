@@ -15,7 +15,7 @@ export const UpdateRouters = (newRouters) => {
 
 export const Worker = [];
 
-if (process.env.PROD === "false") {
+if (process.env.PROD === "true") {
   Object.keys(os.cpus()).forEach(async () => {
     Worker.push(await CreateWorker());
   });
