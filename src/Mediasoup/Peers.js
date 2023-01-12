@@ -74,11 +74,11 @@ export class Peer {
 
     this.consumers.forEach((item) => item.close());
 
-    this.producingTransports.forEach((item) => item.close());
+    this.producingTransports.forEach((item) => item?.close());
 
-    this.consumingTransports.forEach((item) => item.close());
+    this.consumingTransports.forEach((item) => item?.close());
 
-    this.socket.disconnect();
+    this.socket?.disconnect();
 
     this.producers = [];
 
@@ -88,9 +88,9 @@ export class Peer {
 
     this.consumingTransports = [];
 
-    this.router.removeLoad(this.uid);
+    this.router?.removeLoad(this.uid);
 
-    delete this.room.peers[this.uid];
+    delete this.room?.peers[this.uid];
 
     Room.findByIdAndUpdate(
       this.room.id,
