@@ -111,7 +111,7 @@ export class Peer {
   };
 
   deviceConnected = () => {
-    const allPeers = this.room.getAllProducingPeers(this.uid);
+    const allPeers = this.room.getAllPeers(this.uid);
 
     allPeers.forEach((elem) => {
       this.socket.emit("rtc-user-joined", {

@@ -125,6 +125,22 @@ export class RTCRoom {
     return producingPeers;
   };
 
+  getAllPeers = (uid) => {
+    const peersUid = Object.keys(this.peers);
+
+    const allPeers = [];
+
+    peersUid.forEach((item) => {
+      const currentPeer = this.peers[item];
+
+      if (currentPeer.uid !== uid) {
+        producingPeers.push(currentPeer);
+      }
+    });
+
+    return allPeers;
+  };
+
   PipeToAllRouters = async ({ producerRouter, producerId }) => {
     this.routers.forEach(async (item) => {
       if (item.id !== producerRouter.id) {
