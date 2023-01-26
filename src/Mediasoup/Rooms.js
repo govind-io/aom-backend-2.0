@@ -26,6 +26,8 @@ export class RTCRoom {
 
     await roomRouter.init(this);
 
+    console.log({ ActiveWorkerIDX, roomRouter });
+
     if (ActiveWorkerIDX === Worker.length - 1) {
       UpdateActiveWorkerIDX(0);
     } else {
@@ -80,7 +82,7 @@ export class RTCRoom {
 
     if (!leastLoadedRouter) {
       await this.init();
-      leastLoadedRouter = this.router[0];
+      leastLoadedRouter = this.routers[0];
     }
 
     this.routers.forEach((router) => {
