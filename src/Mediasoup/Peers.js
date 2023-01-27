@@ -211,7 +211,7 @@ export class Peer {
 
       //adding producer events
       producer.on("transportclose", () => {
-        this.producingTransports[0] = undefined;
+        this.producingTransports = [];
       });
 
       producer.observer.on("close", async () => {
