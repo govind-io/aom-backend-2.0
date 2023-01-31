@@ -75,6 +75,8 @@ export class RoomRouter {
     audioLevelObserver.on("volumes", (volumes) => {
       const volumesObj = {};
 
+      console.log({ volumes });
+
       volumes.forEach((item) => {
         const allPeers = Object.keys(this.peers);
 
@@ -95,7 +97,11 @@ export class RoomRouter {
     audioLevelObserver.on("silence", () => {
       const mutedUsersId = Object.keys(this.peers);
 
+      console.log({ mutedUsersId });
+
       mutedUsersId.forEach((item) => delete this.room.volumes[item]);
+
+      console.log(this.room.volumes);
     });
   };
 

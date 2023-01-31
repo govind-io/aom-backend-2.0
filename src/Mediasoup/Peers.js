@@ -129,8 +129,8 @@ export class Peer {
         this.socket.emit("user-published", {
           uid: elem.uid,
           producerId: item.id,
-          kind: elem.customTypeProducers[item.id] || item.kind,
-          type: item.type,
+          kind: item.kind,
+          type: elem.customTypeProducers[item.id],
         });
       });
     });
@@ -205,8 +205,8 @@ export class Peer {
         type,
       });
 
-      if (kind !== "audio" && kind !== "video") {
-        this.customTypeProducers[producer.id] = kind;
+      if (type !== "audio" && type !== "video") {
+        this.customTypeProducers[producer.id] = type;
       }
 
       //adding producer events
