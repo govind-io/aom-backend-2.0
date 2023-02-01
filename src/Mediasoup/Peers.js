@@ -65,6 +65,25 @@ export class Peer {
       );
       callback();
     });
+
+    this.socket.on("notification", ({ content, to }) => {
+      if (!to) {
+        return io
+          .to(this.room.name)
+          .emit("notification", { content, by: this.uid });
+      }
+
+      const allPeers = this.room.getAllPeers(this.uid);
+
+      const peerToNotify = allPeers.find((item) => item.uid === to);
+
+      if (!peerToNotify) return;
+
+      io.to(peerToNotify.socket.id).emit("notifiation", {
+        content,
+        by: this.uid,
+      });
+    });
   };
 
   close = () => {
@@ -96,8 +115,10 @@ export class Peer {
       this.room.id,
       { $pull: { participants: { name: this.uid } } },
       { new: true },
-      (data, err) => {
-        console.log("err updating participants list ", err);
+      (err, doc) => {
+        if (err) {
+          console.log("err updating participants list ", err);
+        }
       }
     );
   };
@@ -220,10 +241,13 @@ export class Peer {
         });
 
         try {
-          if (producer.kind === "audio")
+          if (producer.kind === "audio") {
+            delete this.room.volumes[this.uid];
+
             await this.router.audioLevelObserver?.removeProducer({
               producerId: producer.id,
             });
+          }
         } catch (e) {
           console.log("producer left");
         }
