@@ -68,7 +68,7 @@ export class Peer {
 
     this.socket.on("notification", ({ content, to }) => {
       if (!to) {
-        return io
+        return this.socket
           .to(this.room.name)
           .emit("notification", { content, by: this.uid });
       }
