@@ -39,8 +39,7 @@ app.post("/generate-token", AppAuth, async (req, res) => {
 
   const token = await jsonwebtoken.sign(
     { roomname: room, id: client._id.toString() },
-    process.env.SECRET_KEY,
-    { expiresIn: "24h" }
+    process.env.SECRET_KEY
   );
 
   res.status(200).send({ token });
