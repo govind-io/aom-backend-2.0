@@ -78,11 +78,11 @@ export class RTCRoom {
   };
 
   choosePeerRouter = async () => {
-    let leastLoadedRouter = this.routers[0];
+    let leastLoadedRouter = this.routers?.[0];
 
     if (!leastLoadedRouter) {
       await this.init();
-      leastLoadedRouter = this.routers[0];
+      leastLoadedRouter = this.routers?.[0];
     }
 
     this.routers.forEach((router) => {
