@@ -30,6 +30,7 @@ app.use(express.json());
 app.use(express.static(__publicdir));
 
 //allow cross origin
+
 app.use(cors());
 
 app.post("/generate-token", AppAuth, async (req, res) => {

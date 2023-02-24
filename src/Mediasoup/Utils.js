@@ -3,7 +3,7 @@ export const convertDBsTo0To100 = function (dBs) {
 
   var linear = Math.round(Math.pow(10, dBs / 85) * 10);
 
-  if (linear === 1) {
+  if (linear < 3) {
     return 0;
   }
 
