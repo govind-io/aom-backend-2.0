@@ -64,6 +64,8 @@ export class RTCRoom {
   removeRouter = (id) => {
     this.routers = this.routers.filter((item) => item.id !== id);
 
+    console.log("routers set to ", this.routers, "id - 1");
+
     if (this.routers.length === 0) {
       if (this.interval) {
         clearInterval(this.interval);
@@ -78,11 +80,11 @@ export class RTCRoom {
   };
 
   choosePeerRouter = async () => {
-    let leastLoadedRouter = this.routers?.[0];
+    let leastLoadedRouter = this.routers[0];
 
     if (!leastLoadedRouter) {
       await this.init();
-      leastLoadedRouter = this.routers?.[0];
+      leastLoadedRouter = this.routers[0];
     }
 
     this.routers.forEach((router) => {

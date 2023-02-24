@@ -48,6 +48,6 @@ export const mediaCodecs = [
 
 export const defaultAudioVolumeObserverConfig = {
   maxEntries: 50,
-  threshold: -80,
+  threshold: -45,
   interval: 1000,
 };

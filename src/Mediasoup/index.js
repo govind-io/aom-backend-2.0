@@ -7,9 +7,10 @@ export const CreateWorker = async () => {
     worker = await createWorker({
       rtcMaxPort: parseInt(process.env.RTCMAXPORT),
       rtcMinPort: parseInt(process.env.RTCMINPORT),
+      logLevel: "debug",
     });
   } else {
-    worker = await createWorker();
+    worker = await createWorker({ logLevel: "debug" });
   }
 
   console.log(`Worker pid is ${worker.pid}`);
