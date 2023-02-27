@@ -1,8 +1,8 @@
 version: "3"
 services:
   linux:
-    container_name: "aom-backend"
-    image: "aom-backend"
+    container_name: "meet-backend"
+    image: "meet-backend"
     restart: "always"
     tty: true
     ports:
