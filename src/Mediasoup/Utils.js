@@ -47,3 +47,33 @@ export const CreateWebRTCTransport = (router) => {
     }
   });
 };
+
+export const CreateRTPTransport = (router) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const RtpTransport_options = {
+        listenIp: {
+          ip: "0.0.0.0",
+          announcedIp: process.env.ANNOUNCEDIP,
+        },
+        rtcpMux: true,
+      };
+
+      let transport = await router.createPlainTransport(RtpTransport_options);
+
+      transport.on("dtlsstatechange", (dtlsState) => {
+        if (dtlsState === "closed") {
+          transport.close();
+        }
+      });
+
+      transport.on("close", () => {
+        console.log("transport closed");
+      });
+
+      resolve(transport);
+    } catch (error) {
+      reject(error);
+    }
+  });
+};

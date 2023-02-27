@@ -305,7 +305,7 @@ export class Peer {
     );
 
     if (!consumerTransportToConnect) {
-      return callback(error);
+      return callback(new Error("No consumer Transport to connect"));
     }
 
     try {
